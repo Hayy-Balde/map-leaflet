@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carte Interactive Améliorée</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .coords-grid {
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        }
+        
+        .precision-controls {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 8px;
+            padding: 10px;
+            margin: 10px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .map-overlay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 8px;
+            border-radius: 5px;
+            font-size: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        
+        .zoom-level {
+            position: absolute;
+            top: 50px;
+            right: 10px;
+            z-index: 1000;
+            background: rgba(0, 123, 255, 0.9);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        .crosshair::before,
+        .crosshair::after {
+            content: '';
+            position: absolute;
+            background: #ff4444;
+            border-radius: 1px;
+        }
+        
+        .crosshair::before {
+            width: 20px;
+            height: 2px;
+            top: -1px;
+            left: -10px;
+        }
+        
+        .crosshair::after {
+            width: 2px;
+            height: 20px;
+            top: -10px;
+            left: -1px;
+        }
+        
+        .loading {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .precision-info {
+            font-size: 11px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .accuracy-circle {
+            fill: rgba(74, 172, 254, 0.2);
+            stroke: #4facfe;
+            stroke-width: 2;
+        }
+        
+        .btn-group-custom {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        
+        .coord-display {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            background: #f8f9fa;
+            padding: 5px;
+            border-radius: 3px;
+            border: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <!-- Simulated form inputs for testing -->
+    <div class="container mt-3">
+        <div class="row">
+            <div class="col-md-6">
+                <label for="latitude" class="form-label">Latitude (Interface)</label>
+                <input type="number" id="latitude" class="form-control" step="any" placeholder="9.641200">
+            </div>
+            <div class="col-md-6">
+                <label for="longitude" class="form-label">Longitude (Interface)</label>
+                <input type="number" id="longitude" class="form-control" step="any" placeholder="-13.578400">
+            </div>
+        </div>
+        
+        <div class="mb-3 w-100 mt-3">
+            <div class="form-group row">
+                <div class="col-5">
+                    <button type="button" id="btnLocaliser" class="btn btn-primary w-100">
+                        <i class="fa fa-location-dot me-2"></i>Localiser
+                    </button>
+                </div>
+                <div class="col-5">
+                    <button type="button" id="eraseLocation" class="btn btn-warning w-100 disabled">
+                        <i class="fa fa-eraser me-2"></i>Effacer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal fade" id="leaflet-get-location" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="leaflet-get-location" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="leaflet-get-locationLabel">
+                        <i class="fas fa-map-marked-alt me-2"></i>Carte Interactive - Sélection Précise
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="col-12" id="contentSimulatingResult">
+                        <div class="content">
+                            <div class="position-relative mb-2 rounded-2 overflow-hidden shadow w-100">
+                                <div id="map" class="w-100 rounded-2" style="height: 500px;"></div>
+                                <div class="map-overlay">
+                                    <div><strong>Coordonnées du centre:</strong></div>
+                                    <div id="center-coords" class="coord-display">9.5000000, -13.7000000</div>
+                                </div>
+                                <div class="zoom-level" id="zoom-display">Zoom: 10</div>
+                                <div class="crosshair" id="crosshair"></div>
+                            </div>
+                            
+                            <div class="controls bg-white rounded-2 p-3 shadow border border-1 border-secondary">
+                                <h3 class="text-info mb-3 fs-4 d-flex align-items-center gap-2">
+                                    <i class="fas fa-crosshairs"></i> Coordonnées GPS de Précision
+                                </h3>
+
+                                <div class="d-grid gap-3 mb-3 coords-grid">
+                                    <div>
+                                        <label for="lat" class="form-label fw-bold">Latitude</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="fas fa-arrows-alt-v"></i></span>
+                                            <input type="number" id="lat" name="latModal" class="form-control" placeholder="Ex: 9.6412000" step="0.0000001" aria-label="Latitude">
+                                        </div>
+                                        <div class="precision-info">Précision: ±0.0000001° (~11cm)</div>
+                                    </div>
+
+                                    <div>
+                                        <label for="lng" class="form-label fw-bold">Longitude</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="fas fa-arrows-alt-h"></i></span>
+                                            <input type="number" id="lng" name="lngModal" class="form-control" placeholder="Ex: -13.5784000" step="0.0000001" aria-label="Longitude">
+                                        </div>
+                                        <div class="precision-info">Précision: ±0.0000001° (~8cm à cette latitude)</div>
+                                    </div>
+                                </div>
+
+                                <div class="precision-controls">
+                                    <h6 class="mb-2"><i class="fas fa-cog me-2"></i>Contrôles de Précision</h6>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <label for="precision-level" class="form-label">Niveau de précision:</label>
+                                            <select id="precision-level" class="form-select form-select-sm">
+                                                <option value="7">Ultra-précis (7 décimales - ~1cm)</option>
+                                                <option value="6" selected>Très précis (6 décimales - ~10cm)</option>
+                                                <option value="5">Précis (5 décimales - ~1m)</option>
+                                                <option value="4">Standard (4 décimales - ~10m)</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="zoom-target" class="form-label">Zoom automatique:</label>
+                                            <select id="zoom-target" class="form-select form-select-sm">
+                                                <option value="19">Maximum (19 - Bâtiment)</option>
+                                                <option value="18" selected>Très élevé (18 - Parcelle)</option>
+                                                <option value="16">Élevé (16 - Rue)</option>
+                                                <option value="14">Moyen (14 - Quartier)</option>
+                                                <option value="12">Vue d'ensemble (12 - Ville)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="btn-group-custom mt-3">
+                                    <button class="btn btn-primary btn-sm" onclick="updateMarkerPosition()">
+                                        <i class="fas fa-map-pin"></i> Positionner
+                                    </button>
+                                    <button class="btn btn-success btn-sm" onclick="centerOnMarker()">
+                                        <i class="fas fa-compress-arrows-alt"></i> Centrer
+                                    </button>
+                                    <button class="btn btn-info btn-sm" onclick="useMapCenter()">
+                                        <i class="fas fa-crosshairs"></i> Utiliser le centre
+                                    </button>
+                                    <button class="btn btn-warning btn-sm" onclick="getCurrentLocation()">
+                                        <i class="fas fa-location-arrow"></i> Ma position
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="copyCoordinates()">
+                                        <i class="fas fa-copy"></i> Copier
+                                    </button>
+                                    <button class="btn btn-outline-primary btn-sm" onclick="pasteCoordinates()">
+                                        <i class="fas fa-paste"></i> Coller
+                                    </button>
+                                </div>
+
+                                <div id="message" class="my-2"></div>
+                                <div id="accuracy-info" class="text-muted small mt-2"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-success" onclick="validateAndClose()">
+                        <i class="fas fa-check"></i> Valider et Fermer
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        // Variables globales
+        let map, marker, accuracyCircle;
+        const latInput = $('#lat');
+        const lngInput = $('#lng');
+        const messageDiv = $('#message');
+        const precisionLevel = $('#precision-level');
+        const zoomTarget = $('#zoom-target');
+
+        // Fonctions utilitaires
+        function showMessage(text, type = 'success') {
+            messageDiv.removeClass().addClass(`alert alert-${type} py-2`).html(`<i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' || type === 'danger' ? 'exclamation-circle' : 'info-circle'}"></i> ${text}`).fadeIn();
+            setTimeout(() => messageDiv.fadeOut(), 4000);
+        }
+
+        function formatCoordinate(coord, decimals = 6) {
+            return parseFloat(coord).toFixed(decimals);
+        }
+
+        function updateInputs(latlng) {
+            const precision = parseInt(precisionLevel.val());
+            $('#lat').val(formatCoordinate(latlng.lat, precision));
+            $('#lng').val(formatCoordinate(latlng.lng, precision));
+            
+            // Mise à jour de l'affichage du centre
+            $('#center-coords').text(`${formatCoordinate(latlng.lat, precision)}, ${formatCoordinate(latlng.lng, precision)}`);
+        }
+
+        function updateInterfaceInputs(latlng) {
+            const precision = parseInt(precisionLevel.val());
+            $('#latitude').val(formatCoordinate(latlng.lat, precision));
+            $('#longitude').val(formatCoordinate(latlng.lng, precision));
+        }
+
+        function updateAllInputs(latlng) {
+            updateInputs(latlng);
+            updateInterfaceInputs(latlng);
+        }
+
+        function updateZoomDisplay() {
+            $('#zoom-display').text(`Zoom: ${map.getZoom()}`);
+        }
+
+        function updateCenterCoords() {
+            const center = map.getCenter();
+            const precision = parseInt(precisionLevel.val());
+            $('#center-coords').text(`${formatCoordinate(center.lat, precision)}, ${formatCoordinate(center.lng, precision)}`);
+        }
+
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        function validateCoordinates(lat, lng) {
+            if (isNaN(lat) || isNaN(lng)) {
+                return { valid: false, message: 'Coordonnées invalides !' };
+            }
+            if (lat < -90 || lat > 90) {
+                return { valid: false, message: 'Latitude hors limites ! (-90 à 90)' };
+            }
+            if (lng < -180 || lng > 180) {
+                return { valid: false, message: 'Longitude hors limites ! (-180 à 180)' };
+            }
+            return { valid: true };
+        }
+
+        function addAccuracyCircle(latlng, accuracy) {
+            if (accuracyCircle) {
+                map.removeLayer(accuracyCircle);
+            }
+            
+            if (accuracy && accuracy > 0) {
+                accuracyCircle = L.circle(latlng, {
+                    radius: accuracy,
+                    className: 'accuracy-circle',
+                    fillOpacity: 0.2,
+                    weight: 2
+                }).addTo(map);
+                
+                $('#accuracy-info').html(`<i class="fas fa-target"></i> Précision GPS: ±${Math.round(accuracy)}m`);
+            }
+        }
+
+        // Fonctions principales
+        function updateMarkerFromInputs() {
+            const lat = parseFloat(latInput.val());
+            const lng = parseFloat(lngInput.val());
+            
+            const validation = validateCoordinates(lat, lng);
+            if (!validation.valid) {
+                showMessage(validation.message, 'danger');
+                return;
+            }
+
+            const newLatLng = L.latLng(lat, lng);
+            marker.setLatLng(newLatLng);
+            
+            const targetZoom = parseInt(zoomTarget.val());
+            map.setView(newLatLng, targetZoom);
+            
+            updateInterfaceInputs(newLatLng);
+            showMessage('Position mise à jour avec précision !');
+        }
+
+        window.updateMarkerPosition = function() {
+            updateMarkerFromInputs();
+        };
+
+        window.centerOnMarker = function() {
+            const position = marker.getLatLng();
+            const targetZoom = parseInt(zoomTarget.val());
+            map.setView(position, targetZoom);
+            updateInterfaceInputs(position);
+            showMessage('Carte centrée sur le marqueur !');
+        };
+
+        window.useMapCenter = function() {
+            const center = map.getCenter();
+            marker.setLatLng(center);
+            updateAllInputs(center);
+            showMessage('Marqueur positionné au centre de la carte !');
+        };
+
+        window.getCurrentLocation = function() {
+            const btn = event.target.closest('button');
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<span class="loading"></span> Localisation...';
+            
+            if (!navigator.geolocation) {
+                showMessage('Géolocalisation non supportée par ce navigateur', 'warning');
+                btn.innerHTML = originalHTML;
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const accuracy = position.coords.accuracy;
+                    
+                    const newLatLng = L.latLng(lat, lng);
+                    marker.setLatLng(newLatLng);
+                    
+                    // Zoom adaptatif selon la précision
+                    let zoomLevel = accuracy < 10 ? 19 : accuracy < 50 ? 18 : accuracy < 100 ? 17 : 16;
+                    map.setView(newLatLng, zoomLevel);
+                    
+                    updateAllInputs(newLatLng);
+                    addAccuracyCircle(newLatLng, accuracy);
+                    
+                    showMessage(`Position trouvée avec une précision de ±${Math.round(accuracy)}m !`);
+                    btn.innerHTML = originalHTML;
+                },
+                function(error) {
+                    let errorMessage = 'Erreur de géolocalisation';
+                    switch (error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage = 'Géolocalisation refusée';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage = 'Position indisponible';
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage = 'Délai de géolocalisation dépassé';
+                            break;
+                    }
+                    showMessage(errorMessage, 'danger');
+                    btn.innerHTML = originalHTML;
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 60000
+                }
+            );
+        };
+
+        window.copyCoordinates = async function() {
+            const precision = parseInt(precisionLevel.val());
+            const lat = formatCoordinate(parseFloat(latInput.val()), precision);
+            const lng = formatCoordinate(parseFloat(lngInput.val()), precision);
+            const coordinates = `${lat}, ${lng}`;
+            
+            try {
+                await navigator.clipboard.writeText(coordinates);
+                showMessage(`Coordonnées copiées: ${coordinates}`);
+            } catch (err) {
+                // Fallback pour les navigateurs plus anciens
+                const $textArea = $('<textarea>').val(coordinates).appendTo('body');
+                $textArea[0].select();
+                document.execCommand('copy');
+                $textArea.remove();
+                showMessage('Coordonnées copiées !');
+            }
+        };
+
+        window.pasteCoordinates = async function() {
+            try {
+                const text = await navigator.clipboard.readText();
+                const coords = text.split(',').map(c => c.trim());
+                
+                if (coords.length === 2) {
+                    const lat = parseFloat(coords[0]);
+                    const lng = parseFloat(coords[1]);
+                    
+                    const validation = validateCoordinates(lat, lng);
+                    if (validation.valid) {
+                        latInput.val(lat);
+                        lngInput.val(lng);
+                        updateMarkerFromInputs();
+                        showMessage('Coordonnées collées et appliquées !');
+                    } else {
+                        showMessage(validation.message, 'danger');
+                    }
+                } else {
+                    showMessage('Format incorrect. Utilisez: latitude, longitude', 'warning');
+                }
+            } catch (err) {
+                showMessage('Impossible de lire le presse-papiers', 'warning');
+            }
+        };
+
+        window.validateAndClose = function() {
+            const lat = parseFloat(latInput.val());
+            const lng = parseFloat(lngInput.val());
+            
+            const validation = validateCoordinates(lat, lng);
+            if (validation.valid) {
+                updateInterfaceInputs(L.latLng(lat, lng));
+                $('#leaflet-get-location').modal('hide');
+                showMessage('Coordonnées validées et sauvegardées !');
+                $('#eraseLocation').removeClass('disabled');
+            } else {
+                showMessage(validation.message, 'danger');
+            }
+        };
+
+        // Initialisation
+        $(document).ready(function() {
+            function getInitialCoordinates() {
+                const latVal = $('#latitude').val();
+                const lngVal = $('#longitude').val();
+
+                if (latVal && lngVal && latVal !== '0' && lngVal !== '0') {
+                    const lat = parseFloat(latVal);
+                    const lng = parseFloat(lngVal);
+                    if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                        return [lat, lng];
+                    }
+                }
+                return [9.5, -13.7]; // Conakry par défaut
+            }
+
+            const initialCoords = getInitialCoordinates();
+
+            // Initialisation de la carte
+            map = L.map('map', {
+                center: initialCoords,
+                zoom: 14,
+                zoomControl: true,
+                attributionControl: true,
+                maxZoom: 19,
+                minZoom: 1,
+                zoomSnap: 0.25,
+                zoomDelta: 0.25
+            });
+
+            // Couches de cartes
+            const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+                maxZoom: 19
+            });
+
+            const satelliteLayer = L.tileLayer(
+                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
+                    maxZoom: 19
+                });
+
+            const cartoLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                maxZoom: 19
+            });
+
+            osmLayer.addTo(map);
+
+            L.control.layers({
+                "OpenStreetMap": osmLayer,
+                "Satellite": satelliteLayer,
+                "Carto Voyager": cartoLayer
+            }).addTo(map);
+
+            // Création du marqueur
+            marker = L.marker(initialCoords, {
+                draggable: true,
+                autoPan: true
+            }).addTo(map);
+
+            marker.bindPopup(`
+                <div style="text-align: center; font-family: Arial;">
+                    <strong style="color: #0066cc;">📍 Position sélectionnée</strong><br>
+                    <small>Glissez pour ajuster la position</small>
+                </div>
+            `);
+
+            updateInputs(marker.getLatLng());
+
+            // Événements
+            marker.on('dragend', function() {
+                const position = marker.getLatLng();
+                updateAllInputs(position);
+                showMessage('Position mise à jour par glissement !');
+            });
+
+            map.on('click', function(e) {
+                marker.setLatLng(e.latlng);
+                updateAllInputs(e.latlng);
+                showMessage('Position mise à jour par clic !');
+            });
+
+            map.on('zoomend', updateZoomDisplay);
+            map.on('moveend', updateCenterCoords);
+
+            // Événements des inputs avec debounce amélioré
+            latInput.on('input', debounce(function() {
+                const lat = parseFloat($(this).val());
+                const lng = parseFloat(lngInput.val());
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    const newLatLng = L.latLng(lat, lng);
+                    marker.setLatLng(newLatLng);
+                    updateInterfaceInputs(newLatLng);
+                }
+            }, 300));
+
+            lngInput.on('input', debounce(function() {
+                const lat = parseFloat(latInput.val());
+                const lng = parseFloat($(this).val());
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    const newLatLng = L.latLng(lat, lng);
+                    marker.setLatLng(newLatLng);
+                    updateInterfaceInputs(newLatLng);
+                }
+            }, 300));
+
+            // Changement de précision
+            precisionLevel.on('change', function() {
+                const position = marker.getLatLng();
+                updateAllInputs(position);
+                showMessage(`Précision mise à jour: ${$(this).val()} décimales`);
+            });
+
+            // Gestion des boutons externes
+            $('#btnLocaliser').on('click', function(e) {
+                e.preventDefault();
+                $('#leaflet-get-location').modal('show');
+                $('#eraseLocation').removeClass('disabled');
+            });
+
+            $('#eraseLocation').on('click', function(e) {
+                e.preventDefault();
+                $('#latitude, #longitude, #lat, #lng').val('');
+                $(this).addClass('disabled');
+                showMessage('Coordonnées effacées', 'info');
+            });
+
+            // Événements du modal
+            $('#leaflet-get-location').on('shown.bs.modal', function() {
+                setTimeout(() => {
+                    map.invalidateSize();
+                    updateZoomDisplay();
+                    updateCenterCoords();
+                    
+                    const currentLat = $('#latitude').val();
+                    const currentLng = $('#longitude').val();
+                    
+                    if (currentLat && currentLng && currentLat !== '0' && currentLng !== '0') {
+                        const lat = parseFloat(currentLat);
+                        const lng = parseFloat(currentLng);
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            const newLatLng = L.latLng(lat, lng);
+                            marker.setLatLng(newLatLng);
+                            map.setView(newLatLng, parseInt(zoomTarget.val()));
+                            updateInputs(newLatLng);
+                        }
+                    }
+                }, 300);
+            });
+
+            // Initialisation finale
+            updateZoomDisplay();
+            updateCenterCoords();
+        });
+    </script>
+</body>
+</html>
