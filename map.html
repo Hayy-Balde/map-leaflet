@@ -461,7 +461,7 @@
         const latInput = $('#lat');
         const lngInput = $('#lng');
         const messageDiv = $('#message');
-        const precisionLevel = $('#precision-level');
+        const precisionLevel = 8;
         const zoomTarget = $('#zoom-target');
 
         // Fonctions de conversion de coordonnées
@@ -509,7 +509,7 @@
         }
 
         function updatePrecisionDisplay() {
-            const precision = parseInt(precisionLevel.val());
+            const precision = parseInt(precisionLevel);
             const theoreticalAccuracy = Math.pow(10, -precision) * 111000; // Conversion approximative en mètres
             
             let accuracyText = '';
@@ -542,7 +542,7 @@
         }
 
         function updateInputs(latlng) {
-            const precision = parseInt(precisionLevel.val());
+            const precision = parseInt(precisionLevel);
             const lat = formatCoordinate(latlng.lat, precision);
             const lng = formatCoordinate(latlng.lng, precision);
             
@@ -574,7 +574,7 @@
         }
 
         function updateInterfaceInputs(latlng) {
-            const precision = parseInt(precisionLevel.val());
+            const precision = parseInt(precisionLevel);
             $('#latitude').val(formatCoordinate(latlng.lat, precision));
             $('#longitude').val(formatCoordinate(latlng.lng, precision));
         }
@@ -590,7 +590,7 @@
 
         function updateCenterCoords() {
             const center = map.getCenter();
-            const precision = parseInt(precisionLevel.val());
+            const precision = parseInt(precisionLevel);
             $('#center-coords').text(`${formatCoordinate(center.lat, precision)}, ${formatCoordinate(center.lng, precision)}`);
             
             // Mise à jour de la distance si le marqueur existe
@@ -644,7 +644,7 @@
             );
             
             if (validation.valid) {
-                input.val(formatCoordinate(newValue, parseInt(precisionLevel.val())));
+                input.val(formatCoordinate(newValue, parseInt(precisionLevel)));
                 updateMarkerFromInputs();
                 
                 let deltaText = '';
@@ -844,7 +844,7 @@
         };
 
         window.copyCoordinates = async function() {
-            const precision = parseInt(precisionLevel.val());
+            const precision = parseInt(precisionLevel);
             const lat = formatCoordinate(parseFloat(latInput.val()), precision);
             const lng = formatCoordinate(parseFloat(lngInput.val()), precision);
             const coordinates = `${lat}, ${lng}`;
@@ -872,7 +872,7 @@
                     
                     const validation = validateCoordinates(lat, lng);
                     if (validation.valid) {
-                        const precision = parseInt(precisionLevel.val());
+                        const precision = parseInt(precisionLevel);
                         latInput.val(formatCoordinate(lat, precision));
                         lngInput.val(formatCoordinate(lng, precision));
                         updateMarkerFromInputs();
@@ -1074,12 +1074,12 @@
             }, 200));
 
             // Changement de précision
-            precisionLevel.on('change', function() {
-                const position = marker.getLatLng();
-                updateAllInputs(position);
-                updatePrecisionDisplay();
-                showMessage(`Précision ultra-fine mise à jour: ${$(this).val()} décimales`);
-            });
+            // precisionLevel.on('change', function() {
+            //     const position = marker.getLatLng();
+            //     updateAllInputs(position);
+            //     updatePrecisionDisplay();
+            //     showMessage(`Précision ultra-fine mise à jour: ${$(this).val()} décimales`);
+            // });
 
             // Contrôles clavier pour micro-ajustements
             $(document).on('keydown', function(e) {
@@ -1200,12 +1200,12 @@
             `);
 
             // Ajout d'un indicateur de rotation dans l'overlay
-            $('.map-overlay').append(`
-                <div class="mt-2">
-                    <i class="fas fa-compass"></i> <strong>Rotation:</strong>
-                    <span id="bearing-display">0°</span>
-                </div>
-            `);
+            // $('.map-overlay').append(`
+            //     <div class="mt-2">
+            //        <i class="fas fa-compass"></i> <strong>Rotation:</strong>
+            //         <span id="bearing-display">0°</span>
+            //     </div>
+            // `);
 
             // Insertion des contrôles de rotation avant les contrôles existants
             // $('.ultra-precision-controls').last().before(rotationControls);

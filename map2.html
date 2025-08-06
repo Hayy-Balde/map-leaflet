@@ -640,7 +640,7 @@
             return { valid: true };
         }
 
-        // Fonction d'ajustement micro
+        // Fonction d'ajustement micro simplifiée
         window.microAdjust = function(coord, delta) {
             const input = coord === 'lat' ? latInput : lngInput;
             const currentValue = parseFloat(input.val()) || 0;
@@ -652,17 +652,12 @@
             );
             
             if (validation.valid) {
-                input.val(formatCoordinate(newValue, parseInt(precisionLevel.val())));
+                input.val(formatCoordinate(newValue, 8));
                 updateMarkerFromInputs();
                 
-                let deltaText = '';
-                if (Math.abs(delta) < 0.000001) {
-                    deltaText = `${(delta * 1000000).toFixed(0)}µm`;
-                } else if (Math.abs(delta) < 0.001) {
-                    deltaText = `${(delta * 1000).toFixed(1)}mm`;
-                } else {
-                    deltaText = `${(delta * 100).toFixed(1)}cm`;
-                }
+                let deltaText = Math.abs(delta) < 0.001 ? 
+                    `${(delta * 1000).toFixed(1)}mm` : 
+                    `${(delta * 100).toFixed(1)}cm`;
                 
                 showMessage(`Ajustement: ${delta > 0 ? '+' : ''}${deltaText}`, 'info');
             } else {
@@ -846,99 +841,80 @@
         window.getCurrentLocationUltra = function() {
             const btn = event.target.closest('button');
             const originalHTML = btn.innerHTML;
-            btn.innerHTML = '<span class="loading"></span> Géolocalisation ultra-précise...';
+            btn.innerHTML = '<span class="loading"></span> GPS...';
             
             if (!navigator.geolocation) {
-                showMessage('Géolocalisation non supportée par ce navigateur', 'warning');
+                showMessage('Géolocalisation non supportée', 'warning');
                 btn.innerHTML = originalHTML;
                 return;
             }
 
-            // Options de géolocalisation ultra-précises
             const options = {
                 enableHighAccuracy: true,
                 timeout: 30000,
                 maximumAge: 0
             };
 
-            let attempts = 0;
-            const maxAttempts = 5;
-            
-            function tryGeolocation() {
-                attempts++;
-                
-                navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        const lat = position.coords.latitude;
-                        const lng = position.coords.longitude;
-                        const accuracy = position.coords.accuracy;
-                        const heading = position.coords.heading;
-                        
-                        const newLatLng = L.latLng(lat, lng);
-                        marker.setLatLng(newLatLng);
-                        
-                        // Zoom adaptatif ultra-précis selon la précision
-                        let zoomLevel = accuracy < 1 ? 19 : 
-                                       accuracy < 3 ? 18 : 
-                                       accuracy < 10 ? 17 : 
-                                       accuracy < 30 ? 16 : 15;
-                        
-                        map.setView(newLatLng, zoomLevel);
-                        updateAllInputs(newLatLng);
-                        addAccuracyCircle(newLatLng, accuracy);
-                        
-                        // Mise à jour des informations satellites
-                        $('#sat-count').text(position.coords.satelliteCount || 'N/A');
-                        $('#hdop').text(accuracy < 5 ? 'Excellent' : accuracy < 10 ? 'Bon' : 'Moyen');
-                        $('#fix-time').text(new Date().toLocaleTimeString());
-                        
-                        // Orientation de la carte si disponible
-                        if (heading && !isNaN(heading)) {
-                            rotateMap(heading - currentBearing);
-                        }
-                        
-                        showMessage(`Position ultra-précise trouvée ! Précision: ±${Math.round(accuracy)}m (Tentative ${attempts}/${maxAttempts})`, 'success');
-                        btn.innerHTML = originalHTML;
-                    },
-                    function(error) {
-                        console.error('Erreur de géolocalisation:', error);
-                        
-                        if (attempts < maxAttempts) {
-                            showMessage(`Tentative ${attempts}/${maxAttempts} échouée, nouvelle tentative...`, 'warning');
-                            setTimeout(tryGeolocation, 2000);
-                        } else {
-                            let errorMessage = 'Géolocalisation ultra-précise impossible';
-                            switch (error.code) {
-                                case error.PERMISSION_DENIED:
-                                    errorMessage = 'Permission de géolocalisation refusée';
-                                    break;
-                                case error.POSITION_UNAVAILABLE:
-                                    errorMessage = 'Position GPS indisponible';
-                                    break;
-                                case error.TIMEOUT:
-                                    errorMessage = 'Délai de géolocalisation dépassé';
-                                    break;
-                            }
-                            showMessage(errorMessage, 'danger');
-                            btn.innerHTML = originalHTML;
-                        }
-                    },
-                    options
-                );
-            }
-            
-            tryGeolocation();
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const accuracy = position.coords.accuracy;
+                    const heading = position.coords.heading;
+                    
+                    const newLatLng = L.latLng(lat, lng);
+                    marker.setLatLng(newLatLng);
+                    
+                    // Zoom adaptatif selon la précision
+                    let zoomLevel = accuracy < 1 ? 19 : 
+                                   accuracy < 3 ? 18 : 
+                                   accuracy < 10 ? 17 : 16;
+                    
+                    map.setView(newLatLng, zoomLevel);
+                    updateAllInputs(newLatLng);
+                    addAccuracyCircle(newLatLng, accuracy);
+                    
+                    // Mise à jour des informations satellites
+                    $('#sat-count').text('N/A');
+                    $('#hdop').text(accuracy < 5 ? 'Excellent' : accuracy < 10 ? 'Bon' : 'Moyen');
+                    $('#fix-time').text(new Date().toLocaleTimeString());
+                    
+                    // Orientation de la carte si disponible
+                    if (heading && !isNaN(heading)) {
+                        setMapRotation(heading);
+                    }
+                    
+                    showMessage(`Position trouvée ! Précision: ±${Math.round(accuracy)}m`, 'success');
+                    btn.innerHTML = originalHTML;
+                },
+                function(error) {
+                    let errorMessage = 'Erreur de géolocalisation';
+                    switch (error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage = 'Permission refusée';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage = 'Position indisponible';
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage = 'Délai dépassé';
+                            break;
+                    }
+                    showMessage(errorMessage, 'danger');
+                    btn.innerHTML = originalHTML;
+                },
+                options
+            );
         };
 
         window.copyCoordinates = async function() {
-            const precision = parseInt(precisionLevel.val());
-            const lat = formatCoordinate(parseFloat(latInput.val()), precision);
-            const lng = formatCoordinate(parseFloat(lngInput.val()), precision);
+            const lat = formatCoordinate(parseFloat(latInput.val()), 8);
+            const lng = formatCoordinate(parseFloat(lngInput.val()), 8);
             const coordinates = `${lat}, ${lng}`;
             
             try {
                 await navigator.clipboard.writeText(coordinates);
-                showMessage(`Coordonnées ultra-précises copiées: ${coordinates}`, 'success');
+                showMessage(`Coordonnées copiées: ${coordinates}`, 'success');
             } catch (err) {
                 const $textArea = $('<textarea>').val(coordinates).appendTo('body');
                 $textArea[0].select();
@@ -959,11 +935,10 @@
                     
                     const validation = validateCoordinates(lat, lng);
                     if (validation.valid) {
-                        const precision = parseInt(precisionLevel.val());
-                        latInput.val(formatCoordinate(lat, precision));
-                        lngInput.val(formatCoordinate(lng, precision));
+                        latInput.val(formatCoordinate(lat, 8));
+                        lngInput.val(formatCoordinate(lng, 8));
                         updateMarkerFromInputs();
-                        showMessage('Coordonnées ultra-précises collées et appliquées !');
+                        showMessage('Coordonnées collées et appliquées !');
                     } else {
                         showMessage(validation.message, 'danger');
                     }
@@ -1285,8 +1260,40 @@
                     Ctrl+Glisser ou 2 doigts pour tourner<br>
                     Ctrl+Molette pour rotation fine
                 </div>
+            `); 0°
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="btn-group-vertical w-100">
+                                <button class="btn btn-outline-success btn-sm" onclick="recenterMap()">
+                                    <i class="fas fa-crosshairs"></i> Recentrer
+                                </button>
+                                <button class="btn btn-outline-info btn-sm" onclick="fitToAccuracy()">
+                                    <i class="fas fa-expand-arrows-alt"></i> Ajuster
+                                </button>
+                                <button class="btn btn-outline-warning btn-sm" onclick="map.setZoom(19)">
+                                    <i class="fas fa-search-plus"></i> Zoom Max
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-center mt-2">
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle"></i> Utilisez Ctrl+Flèches pour micro-ajustements
+                            <br>Ctrl+R pour rotation, Ctrl+Shift+R pour reset
+                        </small>
+                    </div>
+                </div>
             `);
-            
+
+            // Ajout d'un indicateur de rotation dans l'overlay
+            $('.map-overlay').append(`
+                <div class="mt-2">
+                    <i class="fas fa-compass"></i> <strong>Rotation:</strong>
+                    <span id="bearing-display">0°</span>
+                </div>
+            `);
 
             // Insertion des contrôles de rotation avant les contrôles existants
             $('.ultra-precision-controls').last().before(rotationControls);
